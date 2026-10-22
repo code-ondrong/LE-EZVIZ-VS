@@ -1,0 +1,11 @@
+.git
+.github
+.env
+*.env
+le-ezviz-vs
+stream
+stream.mp4
+*.log
+featurecode
+session.json*
+recordings

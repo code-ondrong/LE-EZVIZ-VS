@@ -55,6 +55,26 @@ Download [golang](https://go.dev/dl/) and install, open terminal and run `go bui
 
 This will begin the stream and start spitting out the first 64 bytes of packets and their sequence. The stream may end after a while as I haven't setup the keepalive timer yet, the code isn't perfect and things will change but it does illustrate the things I have researched.
 
+## Docker / Coolify
+
+The Docker image bundles le-ezviz-vs with [MediaMTX](https://github.com/bluenviron/mediamtx) and ffmpeg so the cameras can be watched in a browser over HLS. A camera is only streamed while someone is watching it (MediaMTX `runOnDemand`, stopped 30 seconds after the last viewer leaves), all camera processes share one EZVIZ login saved in `/data/session.json`, and streams are recorded to `/data/recordings` while they are live.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `EZVIZ_EMAIL` | required | EZVIZ account e-mail |
+| `EZVIZ_PASSWORD` | required | EZVIZ account password |
+| `CAMERAS` | required | `name:SERIAL` pairs separated by commas, ex: `front-door:BC0123456,garden:BC0654321`. The name is the stream path |
+| `EZVIZ_REGION` | `Asia` | Region of the account, a wrong region is corrected automatically on login |
+| `ALWAYS_ON` | empty | Camera names to stream (and record) all the time instead of only while watched |
+| `RECORD` | `true` | Record streams while they are live |
+| `RECORD_DELETE_AFTER` | `1d` | How long recordings are kept |
+| `LOG_LEVEL` | `info` | `debug` logs every packet, only use it for troubleshooting |
+| `TZ` | `Asia/Makassar` | Time zone used for recording file names |
+
+Streams are public and read-only at `https://<domain>/<name>/index.m3u8`, MediaMTX also serves a player page at `https://<domain>/<name>/`. Only processes inside the container can publish. In Coolify use the Docker Compose build pack and set the domain of the `cctv` service with port 8888, ex: `https://cctv.example.com:8888`. Locally put the variables in a `.env` file and run `docker compose up`.
+
+The same variables work outside Docker: `EZVIZ_EMAIL`, `EZVIZ_PASSWORD`, `EZVIZ_REGION` and `LOG_LEVEL` are used when the matching flag is not given.
+
 ## My methods of reverse engineering
 
 I have used a multitude of programs to help aid my efforts as listed below, research into different types of protocols and video formats also helped. What helped the most was packet analysis and finding bits and pieces of information and patterns along with looking at headers, structs and enums in ghidra.

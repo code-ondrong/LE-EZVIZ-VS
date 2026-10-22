@@ -1,0 +1,24 @@
+# Used by Coolify (Docker Compose build pack) or `docker compose up`, set the variables in Coolify or a local .env
+services:
+  cctv:
+    build: .
+    restart: unless-stopped
+    environment:
+      EZVIZ_EMAIL: ${EZVIZ_EMAIL:?}
+      EZVIZ_PASSWORD: ${EZVIZ_PASSWORD:?}
+      EZVIZ_REGION: ${EZVIZ_REGION:-Asia}
+      # name:SERIAL pairs separated by commas, the name is the public path: https://<domain>/<name>/index.m3u8
+      CAMERAS: ${CAMERAS:?}
+      # camera names streamed (and recorded) all the time instead of only while someone is watching
+      ALWAYS_ON: ${ALWAYS_ON:-}
+      RECORD: ${RECORD:-true}
+      RECORD_DELETE_AFTER: ${RECORD_DELETE_AFTER:-1d}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TZ: ${TZ:-Asia/Makassar}
+    volumes:
+      - cctv-data:/data
+    expose:
+      - "8888"
+
+volumes:
+  cctv-data:
