@@ -2,7 +2,7 @@ package client
 
 import (
 	"errors"
-	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -52,7 +52,7 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 	}
 	Packet := new(VTMPacket)
 	Packet.Header = make([]byte, 8)
-	if _, err = VTDUstream.Conn.Read(Packet.Header); err != nil {
+	if _, err = io.ReadFull(VTDUstream.Conn, Packet.Header); err != nil {
 		log.Error("Error reading from TCP sock", zap.Error(err))
 		return err
 	}
@@ -65,7 +65,7 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 		return errors.New("Unexpected message type in buffer area")
 	}
 	Packet.Body = make([]byte, Len)
-	if _, err = VTDUstream.Conn.Read(Packet.Body); err != nil {
+	if _, err = io.ReadFull(VTDUstream.Conn, Packet.Body); err != nil {
 		log.Error("Error reading from TCP sock", zap.Error(err))
 		return err
 	}
@@ -106,9 +106,14 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 			return err
 		}
 		log.Debug("Print first 64 bytes of packets as an example, further handling is needed. I believe these are like RTSP interleaved packets over TCP")
-		streamFile, err := os.Create("stream")
-		if err != nil {
-			panic(err)
+		var streamFile io.Writer = os.Stdout
+		if LEZ.StreamOutput != "-" {
+			f, err := os.Create(LEZ.StreamOutput)
+			if err != nil {
+				panic(err)
+			}
+			defer f.Close()
+			streamFile = f
 		}
 		// rtpStreamFile, err := os.Create("rtp_stream")
 		// if err != nil {
@@ -121,7 +126,7 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 			Packet := new(VTMPacket)
 			Packet.Header = make([]byte, 8)
 			// VTDUstream.Conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			if _, err = VTDUstream.Conn.Read(Packet.Header); err != nil {
+			if _, err = io.ReadFull(VTDUstream.Conn, Packet.Header); err != nil {
 				log.Error("Error reading from TCP sock", zap.Error(err))
 				return err
 			}
@@ -146,8 +151,9 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 			if Msg == MSG_KEEPALIVE_RSP {
 				log.Debug("Keepalive responded")
 			}
-			Packet.Body = make([]byte, 0, Len)
-			ReadByteCount, err := VTDUstream.Conn.Read(Packet.Body)
+			// TCP can hand back less than Len per Read, ReadFull keeps the framing aligned
+			Packet.Body = make([]byte, Len)
+			_, err = io.ReadFull(VTDUstream.Conn, Packet.Body)
 			VTDUstream.Conn.SetReadDeadline(time.Now().Add(time.Second * 4))
 			if err != nil {
 				log.Error("Error reading from TCP sock", zap.Error(err))
@@ -155,21 +161,6 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 			}
 			if Msg == MSG_KEEPALIVE_RSP {
 				log.Sugar().Debugf("KA RSP: %x", Packet.Body)
-			}
-			if ReadByteCount != int(Len) { // read until we fill the Len
-				n := ReadByteCount
-				// log.Debug("ReadByteCount is not equal to Len", zap.Int("ReadByteCount", ReadByteCount), zap.Uint16("Len", Len))
-				for n != int(Len) {
-					Buf := make([]byte, int(Len)-n)
-					ReadByteCount, err := VTDUstream.Conn.Read(Buf)
-					if err != nil {
-						log.Error("Error reading from TCP sock", zap.Error(err))
-						return err
-					}
-					Packet.Body = append(Packet.Body[:n], Buf...)
-					n += ReadByteCount
-				}
-				Packet.Body = Packet.Body[0:n]
 			}
 			if Chan == 0x01 {
 				if VTDUstream.Transport == TRANS_UNKNOWN {
@@ -196,10 +187,10 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 					}
 				}
 				if VTDUstream.Transport == TRANS_RTP {
-					log.Debug("Transport is RTP, this is still WIP, H.265 works")
+					log.Debug("Transport is RTP, this is still WIP, H.264/H.265 video works")
 					ATD = true
 					// rtpStreamFile.Write(Packet.Body)
-					Payload, err := LEZ.DecodeRTP(Packet.Body)
+					Payload, err := LEZ.DecodeRTP(Packet.Body, &VTDUstream.Codec)
 					if err != nil {
 						log.Error("Error decoding RTP", zap.Error(err))
 					}
@@ -210,10 +201,14 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 				}
 			}
 			if Chan == 0x00 && Seq == 0x00 && Msg != MSG_KEEPALIVE_RSP && ATD {
+				if LEZ.StreamOutput == "-" {
+					log.Info("Stream ended")
+					return nil
+				}
 				log.Info("Attempting ffmpeg re-encode to mp4")
 				var eg errgroup.Group
-				stream := ffmpeg.Input("./stream").
-					Output("stream.mp4", ffmpeg.KwArgs{
+				stream := ffmpeg.Input(LEZ.StreamOutput).
+					Output(LEZ.StreamOutput+".mp4", ffmpeg.KwArgs{
 						"vcodec": "copy",
 						"f":      "mp4",
 					})
@@ -260,7 +255,7 @@ func CreateKeepAliveTicker(Sock net.Conn, StreamSSN string) {
 	SendKeepAlive(Sock, StreamSSN)
 	ticker := time.NewTicker(10 * time.Second)
 	for t := range ticker.C {
-		fmt.Println("Sending Keep Alive at", t)
+		log.Debug("Sending Keep Alive", zap.Time("At", t))
 		err := SendKeepAlive(Sock, StreamSSN)
 		if err != nil {
 			ticker.Stop()

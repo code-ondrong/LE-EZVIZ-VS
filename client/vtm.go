@@ -2,6 +2,7 @@ package client
 
 import (
 	"errors"
+	"io"
 	"le-ezviz-vs/ezproto"
 	"net"
 	"strconv"
@@ -49,7 +50,7 @@ func (LEZ *LE_EZVIZ_Client) StartVTMStream(VS *VTMStream, StreamURL string) (*ez
 	}
 	Packet := new(VTMPacket)
 	Packet.Header = make([]byte, 8)
-	if _, err = VS.Conn.Read(Packet.Header); err != nil {
+	if _, err = io.ReadFull(VS.Conn, Packet.Header); err != nil {
 		log.Error("Error reading from TCP sock", zap.Error(err))
 		return nil, err
 	}
@@ -62,7 +63,7 @@ func (LEZ *LE_EZVIZ_Client) StartVTMStream(VS *VTMStream, StreamURL string) (*ez
 		return nil, errors.New("Unexpected message type in buffer area")
 	}
 	Packet.Body = make([]byte, Len)
-	if _, err = VS.Conn.Read(Packet.Body); err != nil {
+	if _, err = io.ReadFull(VS.Conn, Packet.Body); err != nil {
 		log.Error("Error reading from TCP sock", zap.Error(err))
 		return nil, err
 	}

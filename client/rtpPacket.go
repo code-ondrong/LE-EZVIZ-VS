@@ -18,8 +18,8 @@ const Marker byte = 0x80
 |Version| P | X |   CC   |
 */
 
-// A rudimentary RTP header decode
-func (LEZ *LE_EZVIZ_Client) DecodeRTP(buf []byte) ([]byte, error) {
+// A rudimentary RTP header decode, codec holds the detected video codec across packets of the same stream
+func (LEZ *LE_EZVIZ_Client) DecodeRTP(buf []byte, codec *int) ([]byte, error) {
 	if buf[0] == 0 && buf[1] == 0 && buf[2] == 1 || buf[0] == 0 && buf[1] == 0 && buf[2] == 0 && buf[3] == 1 {
 		log.Debug("This is not RTP, NAL header?")
 		return nil, nil
@@ -107,7 +107,16 @@ func (LEZ *LE_EZVIZ_Client) DecodeRTP(buf []byte) ([]byte, error) {
 		// RTPProcessAudio(buf)
 	}
 	if len(Payload) > 2 {
-		if PayloadType == 96 {
+		if PayloadType == 96 && *codec == CODEC_UNKNOWN {
+			if *codec = DetectRTPCodec(Payload); *codec != CODEC_UNKNOWN {
+				log.Info("Detected RTP video codec", zap.String("Codec", CodecName(*codec)))
+			}
+		}
+		if PayloadType == 96 && *codec == CODEC_H264 {
+			Frame = DepacketizeH264(Payload)
+			log.Sugar().Debugf("H264 NAL: %d", Payload[0]&0x1f)
+			log.Sugar().Debugf("RTP Payload: %x", Payload)
+		} else if PayloadType == 96 {
 			RTPnal = (Payload[0] >> 1) & 0x3F
 			if RTPnal == 0x20 {
 				log.Debug("VPS h265")
@@ -153,6 +162,31 @@ func (LEZ *LE_EZVIZ_Client) DecodeRTP(buf []byte) ([]byte, error) {
 	log.Debug("RTP Header", zap.Uint8("Ver", Version), zap.Bool("Pad", Padding), zap.Bool("Ext", Extension), zap.Uint8("CC", ContributionCount), zap.Bool("Mark", Marker), zap.Uint8("PayloadT", PayloadType), zap.Uint16("Seq", SequenceNumber), zap.Uint32("Time", TimeStamp), zap.Uint32("SSI", SSI), zap.Int("PayloadLen", len(Payload)))
 	log.Sugar().Debugf("RTP Payload: %x", Payload)
 	return nil, nil
+}
+
+// DepacketizeH264 turns an H.264 RTP payload (RFC 6184) into Annex B, payload must be at least 3 bytes
+func DepacketizeH264(payload []byte) []byte {
+	switch payload[0] & 0x1f {
+	case 24: // STAP-A: several NAL units each prefixed with a 2 byte size
+		var frame []byte
+		for p := payload[1:]; len(p) > 2; {
+			size := int(binary.BigEndian.Uint16(p[:2]))
+			if size == 0 || len(p) < 2+size {
+				break
+			}
+			frame = append(frame, AppendAVCStartCode(p[2:2+size])...)
+			p = p[2+size:]
+		}
+		return frame
+	case 28: // FU-A: the start fragment rebuilds the NAL header from F|NRI of the FU indicator and the type in the FU header
+		if payload[1]&0x80 != 0 {
+			frame := AppendAVCStartCode([]byte{payload[0]&0xe0 | payload[1]&0x1f})
+			return append(frame, payload[2:]...)
+		}
+		return payload[2:]
+	default: // single NAL unit
+		return AppendAVCStartCode(payload)
+	}
 }
 
 // Currently unsure whether to replace or append the start code

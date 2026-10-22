@@ -23,3 +23,14 @@ client/streamurl_test.go
 featurecode
 # Built binary (macOS/Linux)
 le-ezviz-vs
+
+# Stream captures
+stream
+stream.mp4
+
+# environment files
+*.env
+*.env.local
+# Saved login session (-preserveSession)
+session.json
+session.json.lock

@@ -9,28 +9,28 @@ var Log *zap.Logger
 func init() {
 	var err error
 	cfg := zap.NewDevelopmentConfig()
-	cfg.OutputPaths = []string{
-		"stdout",
-		"./lez.log",
-	}
+	// stderr so nothing logged before CreateLogger can end up in a video stream written to stdout
+	cfg.OutputPaths = []string{"stderr"}
 	if Log, err = cfg.Build(); err != nil {
 		panic(err)
 	}
 }
 
-func CreateLogger(logFile, stdout bool) {
-	var err error
+// CreateLogger replaces Log, console is "stdout", "stderr" or "" for none and level is a zap level name (debug, info, warn, error)
+func CreateLogger(logFile bool, console, level string) error {
+	lvl, err := zap.ParseAtomicLevel(level)
+	if err != nil {
+		return err
+	}
 	cfg := zap.NewDevelopmentConfig()
+	cfg.Level = lvl
 	cfg.OutputPaths = make([]string, 0, 2)
-	if stdout {
-		cfg.OutputPaths = append(cfg.OutputPaths, "stdout")
+	if console != "" {
+		cfg.OutputPaths = append(cfg.OutputPaths, console)
 	}
 	if logFile {
 		cfg.OutputPaths = append(cfg.OutputPaths, "./lez.log")
 	}
-	cfg.Level.SetLevel(zap.DebugLevel)
 	Log, err = cfg.Build()
-	if err != nil {
-		panic(err)
-	}
+	return err
 }

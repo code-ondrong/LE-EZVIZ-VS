@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"le-ezviz-vs/api"
 	"strconv"
@@ -52,6 +53,11 @@ func (LEZ *LE_EZVIZ_Client) GetServerInfo() (*ServerInfoGetResponse, error) {
 		log.Error("Error decoding JSON", zap.Error(err))
 		LEZ.APIServerInfo = nil
 		return nil, err
+	}
+	if LEZ.APIServerInfo.ServerResp == nil || LEZ.APIServerInfo.ServerResp.AuthAddr == nil {
+		log.Error("Server info missing, the session may be invalid", zap.String("ResultCode", LEZ.APIServerInfo.ResultCode))
+		LEZ.APIServerInfo = nil
+		return nil, errors.New("server info missing")
 	}
 	LEZ.AUTH_URL = *LEZ.APIServerInfo.ServerResp.AuthAddr
 	return LEZ.APIServerInfo, nil

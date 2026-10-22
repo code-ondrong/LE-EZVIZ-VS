@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"le-ezviz-vs/api"
 	"le-ezviz-vs/logging"
@@ -22,6 +21,11 @@ const EZLifeUrl = "ezvizlife.com"
 var TerminalName = "LE-EZ"
 var Client *http.Client
 var log = logging.Log
+
+// SetLogger swaps the package logger, log is captured from logging.Log at init so call this after logging.CreateLogger
+func SetLogger(l *zap.Logger) {
+	log = l
+}
 
 const (
 	USE_API_URL = iota
@@ -61,6 +65,8 @@ type LE_EZVIZ_Client struct {
 	VTDUTokens    *VTDU_TokenV2
 	Email         string
 	Password      string
+	VerifyCode    string // terminal bind code from SendVerifyCode, only needed when login returns 6002
+	StreamOutput  string // file the video stream is written to, "-" for stdout
 	Region        string
 	API_URL       string
 	DOM_URL       string
@@ -68,7 +74,7 @@ type LE_EZVIZ_Client struct {
 }
 
 func NewLE_EZVIZ_Client(email, password, region, featurecode, terminalname, clientNo string, timeoutSeconds int) (*LE_EZVIZ_Client, error) {
-	LEZ := &LE_EZVIZ_Client{Email: email, Password: GetMd5(password), Region: region, FeatureCode: featurecode, TerminalName: base64.StdEncoding.EncodeToString([]byte(terminalname)), ClientType: 9, ClientNo: clientNo}
+	LEZ := &LE_EZVIZ_Client{Email: email, Password: GetMd5(password), Region: region, FeatureCode: featurecode, TerminalName: base64.StdEncoding.EncodeToString([]byte(terminalname)), ClientType: 9, ClientNo: clientNo, StreamOutput: "stream"}
 	if v, ok := Regions[region]; ok {
 		if region != "Russia" {
 			LEZ.API_URL = "https://api" + v + "." + EZLifeUrl // ex: apiieu.ezvizlife.com
@@ -200,7 +206,7 @@ func (LEZ *LE_EZVIZ_Client) QueryEncodedAPIRequest(method, endpoint string, urlt
 func init() {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
-		fmt.Println("Error creating cookie jar:", err)
+		log.Error("Error creating cookie jar:", zap.Error(err))
 		return
 	}
 	Client = &http.Client{
@@ -212,6 +218,9 @@ func init() {
 		return http.ErrUseLastResponse
 	}
 }
+
+var ErrVerifyCodeRequired = errors.New("terminal verification code required")
+var ErrVerifyCodeInvalid = errors.New("terminal verification code invalid")
 
 // domainToURL turns a bare domain returned by the API (ex: apiisgp.ezvizlife.com) into a base URL
 func domainToURL(domain string) string {
@@ -228,7 +237,14 @@ func (LEZ *LE_EZVIZ_Client) V3_Login() (*V3_Auth_Login_Response, error) {
 
 // regionRedirects is how many times we follow a 1100 (wrong region) response to the domain the API gives back
 func (LEZ *LE_EZVIZ_Client) v3Login(regionRedirects int) (*V3_Auth_Login_Response, error) {
-	resp, err := LEZ.FormURLEncodedAPIRequest("POST", api.V3_USER_LOGIN_V5, USE_API_URL, map[string]string{"account": LEZ.Email, "password": LEZ.Password, "featureCode": LEZ.FeatureCode, "cuName": base64.StdEncoding.EncodeToString([]byte(TerminalName))})
+	formData := map[string]string{"account": LEZ.Email, "password": LEZ.Password, "featureCode": LEZ.FeatureCode, "cuName": base64.StdEncoding.EncodeToString([]byte(TerminalName))}
+	if LEZ.VerifyCode != "" {
+		// binds this featureCode to the account using the code sent by SendVerifyCode
+		formData["msgType"] = "3"
+		formData["bizType"] = "TERMINAL_BIND"
+		formData["smsCode"] = LEZ.VerifyCode
+	}
+	resp, err := LEZ.FormURLEncodedAPIRequest("POST", api.V3_USER_LOGIN_V5, USE_API_URL, formData)
 	if err != nil {
 		log.Error("Error V3_Login", zap.Error(err))
 		return nil, err
@@ -276,8 +292,12 @@ func (LEZ *LE_EZVIZ_Client) v3Login(regionRedirects int) (*V3_Auth_Login_Respons
 			log.Error("Terminal Bind limit reached, remove some logged in devices in: EZVIZ App Settings -> My Profile -> Login Settings -> Terminal Management. Click and hold to delete single or tap One-Click Cleanup, this may cause a 2FA action")
 		case 1226:
 			log.Error("Invalid email or password")
+		case 1012:
+			log.Error("Verification code is invalid or expired, run again without -verifyCode to get a new one")
+			return nil, ErrVerifyCodeInvalid
 		case 6002:
-			log.Error("2FA is enabled, currently not supported but will be in a future update")
+			log.Error("This terminal is not verified yet, a verification code is required")
+			return nil, ErrVerifyCodeRequired
 		}
 		return nil, errors.New("api meta code not ok")
 	} else {
@@ -285,4 +305,30 @@ func (LEZ *LE_EZVIZ_Client) v3Login(regionRedirects int) (*V3_Auth_Login_Respons
 		LEZ.LoginResponse = LR
 	}
 	return LR, nil
+}
+
+// SendVerifyCode asks EZVIZ to send a terminal bind code to the account's email/phone, call it after V3_Login returns ErrVerifyCodeRequired
+// so API_URL already points at the account's region
+func (LEZ *LE_EZVIZ_Client) SendVerifyCode() error {
+	resp, err := LEZ.FormURLEncodedAPIRequest("POST", api.V3_SMS_NOLOGIN_CHECKCODE, USE_API_URL, map[string]string{"from": LEZ.Email, "bizType": "TERMINAL_BIND"})
+	if err != nil {
+		log.Error("Error SendVerifyCode", zap.Error(err))
+		return err
+	}
+	defer resp.Body.Close()
+	var data struct {
+		Meta struct {
+			Code    *int    `json:"code"`
+			Message *string `json:"message"`
+		} `json:"meta"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		log.Error("Error decoding JSON", zap.Error(err))
+		return err
+	}
+	if data.Meta.Code == nil || *data.Meta.Code != 200 {
+		log.Error("Bad meta code sending verification code", zap.Intp("Code", data.Meta.Code), zap.Stringp("Message", data.Meta.Message))
+		return errors.New("api meta code not ok")
+	}
+	return nil
 }
