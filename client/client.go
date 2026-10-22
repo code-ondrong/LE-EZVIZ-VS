@@ -213,7 +213,21 @@ func init() {
 	}
 }
 
+// domainToURL turns a bare domain returned by the API (ex: apiisgp.ezvizlife.com) into a base URL
+func domainToURL(domain string) string {
+	domain = strings.TrimSuffix(domain, "/")
+	if strings.HasPrefix(domain, "http://") || strings.HasPrefix(domain, "https://") {
+		return domain
+	}
+	return "https://" + domain
+}
+
 func (LEZ *LE_EZVIZ_Client) V3_Login() (*V3_Auth_Login_Response, error) {
+	return LEZ.v3Login(1)
+}
+
+// regionRedirects is how many times we follow a 1100 (wrong region) response to the domain the API gives back
+func (LEZ *LE_EZVIZ_Client) v3Login(regionRedirects int) (*V3_Auth_Login_Response, error) {
 	resp, err := LEZ.FormURLEncodedAPIRequest("POST", api.V3_USER_LOGIN_V5, USE_API_URL, map[string]string{"account": LEZ.Email, "password": LEZ.Password, "featureCode": LEZ.FeatureCode, "cuName": base64.StdEncoding.EncodeToString([]byte(TerminalName))})
 	if err != nil {
 		log.Error("Error V3_Login", zap.Error(err))
@@ -240,9 +254,24 @@ func (LEZ *LE_EZVIZ_Client) V3_Login() (*V3_Auth_Login_Response, error) {
 		log.Error("Error decoding JSON", zap.Error(err))
 		return nil, err
 	}
+	if LR.Meta.Code == nil {
+		log.Error("Missing meta code in login response", zap.ByteString("Body", bodyBytes))
+		return nil, errors.New("api meta code missing")
+	}
+	// 1100: account belongs to another region, the response tells us which API domain to use instead
+	if *LR.Meta.Code == 1100 && regionRedirects > 0 && LR.LoginArea.ApiDomain != nil && *LR.LoginArea.ApiDomain != "" {
+		LEZ.API_URL = domainToURL(*LR.LoginArea.ApiDomain)
+		if LR.LoginArea.WebDomain != nil && *LR.LoginArea.WebDomain != "" {
+			LEZ.DOM_URL = domainToURL(*LR.LoginArea.WebDomain)
+		}
+		log.Warn("Account is registered in a different region, retrying login on the correct server", zap.String("API_URL", LEZ.API_URL), zap.Stringp("AreaName", LR.LoginArea.AreaName))
+		return LEZ.v3Login(regionRedirects - 1)
+	}
 	if *LR.Meta.Code != 200 {
-		log.Error("Bad meta code", zap.Int("Code", *LR.Meta.Code))
+		log.Error("Bad meta code", zap.Int("Code", *LR.Meta.Code), zap.Stringp("Message", LR.Meta.Message))
 		switch *LR.Meta.Code {
+		case 1100:
+			log.Error("Account is registered in a different region, set the correct one with -region", zap.Stringp("ApiDomain", LR.LoginArea.ApiDomain), zap.Stringp("AreaName", LR.LoginArea.AreaName))
 		case 1069:
 			log.Error("Terminal Bind limit reached, remove some logged in devices in: EZVIZ App Settings -> My Profile -> Login Settings -> Terminal Management. Click and hold to delete single or tap One-Click Cleanup, this may cause a 2FA action")
 		case 1226:
