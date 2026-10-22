@@ -67,6 +67,7 @@ type LE_EZVIZ_Client struct {
 	Password      string
 	VerifyCode    string // terminal bind code from SendVerifyCode, only needed when login returns 6002
 	StreamOutput  string // file the video stream is written to, "-" for stdout
+	StreamType    int    // stream= in the VTM URL: 1 main stream, 2 sub stream
 	Region        string
 	API_URL       string
 	DOM_URL       string
@@ -74,7 +75,7 @@ type LE_EZVIZ_Client struct {
 }
 
 func NewLE_EZVIZ_Client(email, password, region, featurecode, terminalname, clientNo string, timeoutSeconds int) (*LE_EZVIZ_Client, error) {
-	LEZ := &LE_EZVIZ_Client{Email: email, Password: GetMd5(password), Region: region, FeatureCode: featurecode, TerminalName: base64.StdEncoding.EncodeToString([]byte(terminalname)), ClientType: 9, ClientNo: clientNo, StreamOutput: "stream"}
+	LEZ := &LE_EZVIZ_Client{Email: email, Password: GetMd5(password), Region: region, FeatureCode: featurecode, TerminalName: base64.StdEncoding.EncodeToString([]byte(terminalname)), ClientType: 9, ClientNo: clientNo, StreamOutput: "stream", StreamType: 1}
 	if v, ok := Regions[region]; ok {
 		if region != "Russia" {
 			LEZ.API_URL = "https://api" + v + "." + EZLifeUrl // ex: apiieu.ezvizlife.com

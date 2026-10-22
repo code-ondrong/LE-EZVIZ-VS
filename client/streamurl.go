@@ -14,7 +14,7 @@ import (
 func (LEZ *LE_EZVIZ_Client) BuildVtmUrl(VTMip string, VTMport int, DeviceSerial, Biz, VTDUToken string, Channel, ClientType int) string {
 	URL := fmt.Sprintf("ysproto://%s:%d/live?", VTMip, VTMport)
 	// Yes we should use smth like url.Value{} but it automatically sorts the keys which messes the layout
-	Params := fmt.Sprintf("dev=%s&chn=%d&stream=1&cln=%d&isp=0&auth=1&ssn=%s&%s&vip=0&timestamp=%d", DeviceSerial, Channel, ClientType, VTDUToken, Biz, time.Now().UnixMilli())
+	Params := fmt.Sprintf("dev=%s&chn=%d&stream=%d&cln=%d&isp=0&auth=1&ssn=%s&%s&vip=0&timestamp=%d", DeviceSerial, Channel, LEZ.StreamType, ClientType, VTDUToken, Biz, time.Now().UnixMilli())
 	return URL + Params
 }
 

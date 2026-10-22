@@ -8,6 +8,7 @@ set -euo pipefail
 : "${CAMERAS:?CAMERAS is required, ex: front-door:BC0123456,garden:BC0654321}"
 RECORD="${RECORD:-true}"
 RECORD_DELETE_AFTER="${RECORD_DELETE_AFTER:-1d}"
+SUBSTREAM="${SUBSTREAM:-true}"
 ALWAYS_ON="${ALWAYS_ON:-}"
 ALWAYS_ON=",${ALWAYS_ON//[[:space:]]/},"
 export TERMINAL_NAME="${TERMINAL_NAME:-LE-EZ-CCTV}"
@@ -15,6 +16,10 @@ CONFIG=/tmp/mediamtx.yml
 
 if [[ "$RECORD" != true && "$RECORD" != false ]]; then
 	echo "RECORD must be true or false" >&2
+	exit 1
+fi
+if [[ "$SUBSTREAM" != true && "$SUBSTREAM" != false ]]; then
+	echo "SUBSTREAM must be true or false" >&2
 	exit 1
 fi
 
@@ -43,6 +48,15 @@ for entry in "${entries[@]}"; do
     runOnDemandCloseAfter: 30s
 "
 		echo "Camera $name ($serial): on demand"
+	fi
+	# lower resolution sub stream for phones and slow connections, always on demand
+	if [[ "$SUBSTREAM" == true ]]; then
+		paths+="  $name-sd:
+    runOnDemand: /app/camera.sh $serial 2
+    runOnDemandRestart: true
+    runOnDemandStartTimeout: 30s
+    runOnDemandCloseAfter: 30s
+"
 	fi
 done
 

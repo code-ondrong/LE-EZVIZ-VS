@@ -11,6 +11,8 @@ services:
       CAMERAS: ${CAMERAS:?}
       # camera names streamed (and recorded) all the time instead of only while someone is watching
       ALWAYS_ON: ${ALWAYS_ON:-}
+      # also serve every camera's lower resolution sub stream at <name>-sd
+      SUBSTREAM: ${SUBSTREAM:-true}
       RECORD: ${RECORD:-true}
       RECORD_DELETE_AFTER: ${RECORD_DELETE_AFTER:-1d}
       LOG_LEVEL: ${LOG_LEVEL:-info}

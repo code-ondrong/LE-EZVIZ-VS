@@ -66,12 +66,13 @@ The Docker image bundles le-ezviz-vs with [MediaMTX](https://github.com/bluenvir
 | `CAMERAS` | required | `name:SERIAL` pairs separated by commas, ex: `front-door:BC0123456,garden:BC0654321`. The name is the stream path |
 | `EZVIZ_REGION` | `Asia` | Region of the account, a wrong region is corrected automatically on login |
 | `ALWAYS_ON` | empty | Camera names to stream (and record) all the time instead of only while watched |
+| `SUBSTREAM` | `true` | Also serve each camera's sub stream (lower resolution, ex: 768x432) at `<name>-sd` |
 | `RECORD` | `true` | Record streams while they are live |
 | `RECORD_DELETE_AFTER` | `1d` | How long recordings are kept |
 | `LOG_LEVEL` | `info` | `debug` logs every packet, only use it for troubleshooting |
 | `TZ` | `Asia/Makassar` | Time zone used for recording file names |
 
-Streams are public and read-only at `https://<domain>/<name>/index.m3u8`, MediaMTX also serves a player page at `https://<domain>/<name>/`. Only processes inside the container can publish. In Coolify use the Docker Compose build pack and set the domain of the `cctv` service with port 8888, ex: `https://cctv.example.com:8888`. Locally put the variables in a `.env` file and run `docker compose up`.
+Streams are public and read-only at `https://<domain>/<name>/index.m3u8` (sub stream: `https://<domain>/<name>-sd/index.m3u8`), MediaMTX also serves a player page at `https://<domain>/<name>/`. Only processes inside the container can publish. In Coolify use the Docker Compose build pack and set the domain of the `cctv` service with port 8888, ex: `https://cctv.example.com:8888`. Locally put the variables in a `.env` file and run `docker compose up`.
 
 The same variables work outside Docker: `EZVIZ_EMAIL`, `EZVIZ_PASSWORD`, `EZVIZ_REGION` and `LOG_LEVEL` are used when the matching flag is not given.
 

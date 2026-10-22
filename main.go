@@ -22,6 +22,7 @@ var preservefc = flag.Bool("preserveFeatureCode", true, "Preserve the featurecod
 var deviceSerial = flag.String("deviceSerial", envOr("EZVIZ_DEVICE_SERIAL", ""), "The device serial you want to connect to (env EZVIZ_DEVICE_SERIAL)")
 var preserveSession = flag.Bool("preserveSession", false, "Save the login session to session.json and reuse it while valid, lets several processes share one login")
 var output = flag.String("output", "stream", "File the video stream is written to, - writes it to stdout (logs then go to stderr) to pipe into ffmpeg")
+var stream = flag.String("stream", envOr("EZVIZ_STREAM", "1"), "Stream to request: 1 main stream (HD), 2 sub stream (SD) (env EZVIZ_STREAM)")
 var logLevel = flag.String("logLevel", envOr("LOG_LEVEL", "debug"), "Log level: debug, info, warn, error (env LOG_LEVEL)")
 var stdout = flag.Bool("stdout", true, "Print log to the terminal")
 var logFile = flag.Bool("logFile", true, "Print log to lez.log")
@@ -107,6 +108,15 @@ func main() {
 	}
 	LEZ.VerifyCode = *verifyCode
 	LEZ.StreamOutput = *output
+	switch *stream {
+	case "1":
+		LEZ.StreamType = 1
+	case "2":
+		LEZ.StreamType = 2
+	default:
+		log.Error("Invalid stream, use 1 (main) or 2 (sub)", zap.String("Stream", *stream))
+		os.Exit(1)
+	}
 	sessionFile := ""
 	if *preserveSession {
 		sessionFile = "session.json"
