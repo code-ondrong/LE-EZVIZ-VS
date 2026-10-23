@@ -57,7 +57,12 @@ This will begin the stream and start spitting out the first 64 bytes of packets 
 
 ## Docker / Coolify
 
-The Docker image bundles le-ezviz-vs with [MediaMTX](https://github.com/bluenviron/mediamtx) and ffmpeg so the cameras can be watched in a browser over HLS. A camera is only streamed while someone is watching it (MediaMTX `runOnDemand`, stopped 30 seconds after the last viewer leaves), all camera processes share one EZVIZ login saved in `/data/session.json`, and streams are recorded to `/data/recordings` while they are live.
+The Docker image bundles le-ezviz-vs with [MediaMTX](https://github.com/bluenviron/mediamtx), ffmpeg and `cctvd` so the cameras can be watched in a browser over HLS.
+
+- A camera is only streamed while someone is watching it (MediaMTX `runOnDemand`, stopped 30 seconds after the last viewer leaves).
+- RTP cameras are published straight to MediaMTX with the camera's own timestamps (`-publish`), MPEG-PS cameras go through ffmpeg. Together with Low-Latency HLS a cold camera plays about 5 seconds after it is opened.
+- All camera processes share one EZVIZ login saved in `/data/session.json`.
+- `cctvd` serves the public port. It passes HLS through to MediaMTX and adds `/status.json` (which cameras are online, from EZVIZ, with their latest thumbnail) and `/thumb/<name>.jpg` (480px wide, taken every `THUMB_LIVE_INTERVAL` while a camera is watched, otherwise every `THUMB_IDLE_INTERVAL` by starting its stream briefly).
 
 | Variable | Default | Description |
 | --- | --- | --- |
@@ -67,12 +72,15 @@ The Docker image bundles le-ezviz-vs with [MediaMTX](https://github.com/bluenvir
 | `EZVIZ_REGION` | `Asia` | Region of the account, a wrong region is corrected automatically on login |
 | `ALWAYS_ON` | empty | Camera names to stream (and record) all the time instead of only while watched |
 | `SUBSTREAM` | `true` | Also serve each camera's sub stream (lower resolution, ex: 768x432) at `<name>-sd` |
+| `HLS_VARIANT` | `lowLatency` | `lowLatency` or `fmp4`. fMP4 starts ~4 seconds slower but Safari's native player never trips over cameras with uneven frame timing |
+| `THUMB_LIVE_INTERVAL` | `30s` | Thumbnail refresh while a camera is watched |
+| `THUMB_IDLE_INTERVAL` | `15m` | Thumbnail refresh while nobody watches, each one starts the camera for a few seconds |
 | `RECORD` | `true` | Record streams while they are live |
 | `RECORD_DELETE_AFTER` | `1d` | How long recordings are kept |
 | `LOG_LEVEL` | `info` | `debug` logs every packet, only use it for troubleshooting |
 | `TZ` | `Asia/Makassar` | Time zone used for recording file names |
 
-Streams are public and read-only at `https://<domain>/<name>/index.m3u8` (sub stream: `https://<domain>/<name>-sd/index.m3u8`), MediaMTX also serves a player page at `https://<domain>/<name>/`. Only processes inside the container can publish. In Coolify use the Docker Compose build pack and set the domain of the `cctv` service with port 8888, ex: `https://cctv.example.com:8888`. Locally put the variables in a `.env` file and run `docker compose up`.
+Streams are public and read-only at `https://<domain>/<name>/index.m3u8` (sub stream: `https://<domain>/<name>-sd/index.m3u8`), MediaMTX also serves a player page at `https://<domain>/<name>/`. Only processes inside the container can publish. In Coolify use the Docker Compose build pack and set the domain of the `cctv` service with port 8080, ex: `https://cctv.example.com:8080`. Locally put the variables in a `.env` file and run `docker compose up`.
 
 The same variables work outside Docker: `EZVIZ_EMAIL`, `EZVIZ_PASSWORD`, `EZVIZ_REGION` and `LOG_LEVEL` are used when the matching flag is not given.
 

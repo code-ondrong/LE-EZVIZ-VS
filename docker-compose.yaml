@@ -15,12 +15,17 @@ services:
       SUBSTREAM: ${SUBSTREAM:-true}
       RECORD: ${RECORD:-true}
       RECORD_DELETE_AFTER: ${RECORD_DELETE_AFTER:-1d}
+      # lowLatency (default) or fmp4, plain fMP4 starts slower but never trips iOS on uneven frame timing
+      HLS_VARIANT: ${HLS_VARIANT:-lowLatency}
+      # how often camera thumbnails are refreshed while watched and while idle (the idle one starts the camera briefly)
+      THUMB_LIVE_INTERVAL: ${THUMB_LIVE_INTERVAL:-30s}
+      THUMB_IDLE_INTERVAL: ${THUMB_IDLE_INTERVAL:-15m}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TZ: ${TZ:-Asia/Makassar}
     volumes:
       - cctv-data:/data
     expose:
-      - "8888"
+      - "8080"
 
 volumes:
   cctv-data:

@@ -23,6 +23,7 @@ var deviceSerial = flag.String("deviceSerial", envOr("EZVIZ_DEVICE_SERIAL", ""),
 var preserveSession = flag.Bool("preserveSession", false, "Save the login session to session.json and reuse it while valid, lets several processes share one login")
 var output = flag.String("output", "stream", "File the video stream is written to, - writes it to stdout (logs then go to stderr) to pipe into ffmpeg")
 var stream = flag.String("stream", envOr("EZVIZ_STREAM", "1"), "Stream to request: 1 main stream (HD), 2 sub stream (SD) (env EZVIZ_STREAM)")
+var publish = flag.String("publish", "", "Publish the video to this RTSP URL (ex: MediaMTX) instead of writing it to -output, RTP video keeps the camera's timestamps")
 var logLevel = flag.String("logLevel", envOr("LOG_LEVEL", "debug"), "Log level: debug, info, warn, error (env LOG_LEVEL)")
 var stdout = flag.Bool("stdout", true, "Print log to the terminal")
 var logFile = flag.Bool("logFile", true, "Print log to lez.log")
@@ -33,30 +34,6 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
-}
-
-// login logs in, with a session file it reuses the saved session and logs in again if the API rejects it
-func login(LEZ *client.LE_EZVIZ_Client, sessionFile string) error {
-	if sessionFile == "" {
-		if _, err := LEZ.V3_Login(); err != nil {
-			return err
-		}
-		_, err := LEZ.GetServerInfo()
-		return err
-	}
-	cached, err := LEZ.LoginCached(sessionFile)
-	if err != nil {
-		return err
-	}
-	if _, err = LEZ.GetServerInfo(); err != nil && cached {
-		log.Warn("Saved session rejected, logging in again")
-		LEZ.ForgetSession(sessionFile)
-		if _, err = LEZ.LoginCached(sessionFile); err != nil {
-			return err
-		}
-		_, err = LEZ.GetServerInfo()
-	}
-	return err
 }
 
 func main() {
@@ -108,6 +85,9 @@ func main() {
 	}
 	LEZ.VerifyCode = *verifyCode
 	LEZ.StreamOutput = *output
+	if *publish != "" {
+		LEZ.Publisher = client.NewPublisher(*publish)
+	}
 	switch *stream {
 	case "1":
 		LEZ.StreamType = 1
@@ -121,7 +101,7 @@ func main() {
 	if *preserveSession {
 		sessionFile = "session.json"
 	}
-	if err = login(LEZ, sessionFile); err != nil {
+	if err = LEZ.Login(sessionFile); err != nil {
 		if errors.Is(err, client.ErrVerifyCodeRequired) && *verifyCode == "" {
 			if err = LEZ.SendVerifyCode(); err != nil {
 				panic(err)

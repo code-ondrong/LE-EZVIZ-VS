@@ -61,7 +61,7 @@ for entry in "${entries[@]}"; do
 done
 
 cd /data
-mkdir -p recordings
+mkdir -p recordings thumbs
 
 # One login up front: checks the credentials and saves the session (session.json) the camera processes reuse
 if ! le-ezviz-vs -preserveSession -terminalName="$TERMINAL_NAME" -logFile=false -logLevel=info; then
@@ -79,11 +79,14 @@ authInternalUsers:
     ips: ["127.0.0.1", "::1"]
     permissions:
       - action: publish
+      - action: api
   # anyone may watch
   - user: any
     permissions:
       - action: read
-api: false
+# cctvd asks the API which cameras are streaming
+api: true
+apiAddress: 127.0.0.1:9997
 metrics: false
 pprof: false
 playback: false
@@ -95,10 +98,11 @@ webrtc: false
 srt: false
 moq: false
 hls: true
-hlsAddress: :8888
+# only reached through cctvd
+hlsAddress: 127.0.0.1:8888
 hlsAllowOrigins: ["*"]
-# plain fMP4 HLS: Low-Latency HLS breaks on iOS when part durations drift, which they do with wall clock timestamps
-hlsVariant: fmp4
+# Low-Latency HLS starts ~4s sooner as it doesn't wait for a whole segment
+hlsVariant: ${HLS_VARIANT:-lowLatency}
 pathDefaults:
   record: $RECORD
   recordPath: /data/recordings/%path/%Y-%m-%d_%H-%M-%S-%f
@@ -107,4 +111,15 @@ paths:
 $paths
 EOF
 
-exec mediamtx "$CONFIG"
+# cctvd serves the public port: HLS from MediaMTX plus camera thumbnails and status.
+# When either process exits the other is stopped too so the container restarts
+mediamtx "$CONFIG" &
+mediamtx_pid=$!
+cctvd &
+cctvd_pid=$!
+trap 'kill -TERM "$mediamtx_pid" "$cctvd_pid" 2>/dev/null' TERM INT
+code=0
+wait -n || code=$?
+kill -TERM "$mediamtx_pid" "$cctvd_pid" 2>/dev/null
+wait
+exit "$code"

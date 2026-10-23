@@ -107,7 +107,9 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 		}
 		log.Debug("Print first 64 bytes of packets as an example, further handling is needed. I believe these are like RTSP interleaved packets over TCP")
 		var streamFile io.Writer = os.Stdout
-		if LEZ.StreamOutput != "-" {
+		if LEZ.Publisher != nil {
+			defer LEZ.Publisher.Close()
+		} else if LEZ.StreamOutput != "-" {
 			f, err := os.Create(LEZ.StreamOutput)
 			if err != nil {
 				panic(err)
@@ -181,6 +183,12 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 					// 		panic(err)
 					// 	}
 					// }
+					if LEZ.Publisher != nil {
+						if err := LEZ.Publisher.WritePS(Packet.Body); err != nil {
+							return err
+						}
+						continue
+					}
 					_, err := streamFile.Write(Packet.Body)
 					if err != nil {
 						panic(err)
@@ -189,6 +197,12 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 				if VTDUstream.Transport == TRANS_RTP {
 					log.Debug("Transport is RTP, this is still WIP, H.264/H.265 video works")
 					ATD = true
+					if LEZ.Publisher != nil {
+						if err := LEZ.Publisher.WriteRTP(Packet.Body); err != nil {
+							return err
+						}
+						continue
+					}
 					// rtpStreamFile.Write(Packet.Body)
 					Payload, err := LEZ.DecodeRTP(Packet.Body, &VTDUstream.Codec)
 					if err != nil {
@@ -201,7 +215,7 @@ func (LEZ *LE_EZVIZ_Client) StartVTDUStream(VTDUstream *VTDUStream, StreamURL st
 				}
 			}
 			if Chan == 0x00 && Seq == 0x00 && Msg != MSG_KEEPALIVE_RSP && ATD {
-				if LEZ.StreamOutput == "-" {
+				if LEZ.StreamOutput == "-" || LEZ.Publisher != nil {
 					log.Info("Stream ended")
 					return nil
 				}

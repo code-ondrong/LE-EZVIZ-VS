@@ -65,9 +65,10 @@ type LE_EZVIZ_Client struct {
 	VTDUTokens    *VTDU_TokenV2
 	Email         string
 	Password      string
-	VerifyCode    string // terminal bind code from SendVerifyCode, only needed when login returns 6002
-	StreamOutput  string // file the video stream is written to, "-" for stdout
-	StreamType    int    // stream= in the VTM URL: 1 main stream, 2 sub stream
+	VerifyCode    string     // terminal bind code from SendVerifyCode, only needed when login returns 6002
+	StreamOutput  string     // file the video stream is written to, "-" for stdout
+	StreamType    int        // stream= in the VTM URL: 1 main stream, 2 sub stream
+	Publisher     *Publisher // when set the video goes to an RTSP server instead of StreamOutput
 	Region        string
 	API_URL       string
 	DOM_URL       string

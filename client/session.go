@@ -74,3 +74,28 @@ func (LEZ *LE_EZVIZ_Client) saveSession(path string) {
 		log.Warn("Could not save session", zap.Error(err))
 	}
 }
+
+// Login logs in, with a session file it reuses the saved session and logs in again if the API rejects it.
+// It also fetches the server info, which every later request needs
+func (LEZ *LE_EZVIZ_Client) Login(sessionFile string) error {
+	if sessionFile == "" {
+		if _, err := LEZ.V3_Login(); err != nil {
+			return err
+		}
+		_, err := LEZ.GetServerInfo()
+		return err
+	}
+	cached, err := LEZ.LoginCached(sessionFile)
+	if err != nil {
+		return err
+	}
+	if _, err = LEZ.GetServerInfo(); err != nil && cached {
+		log.Warn("Saved session rejected, logging in again")
+		LEZ.ForgetSession(sessionFile)
+		if _, err = LEZ.LoginCached(sessionFile); err != nil {
+			return err
+		}
+		_, err = LEZ.GetServerInfo()
+	}
+	return err
+}
